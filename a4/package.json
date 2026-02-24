@@ -9,6 +9,8 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "csv-parse": "^6.1.0",
+    "csv-stringify": "^6.6.0",
     "d3": "^7.9.0",
     "next": "16.1.6",
     "react": "19.2.3",
