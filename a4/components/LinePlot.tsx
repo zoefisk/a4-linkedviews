@@ -2,44 +2,97 @@
 import * as d3 from "d3";
 import React, { useId, useMemo } from "react";
 
+/**
+ * Accessor function used to read numeric values from your data.
+ * - `d` = datum
+ * - `i` = index
+ */
 type Accessor<T> = (d: T, i: number) => number;
 
+/**
+ * Props for the LinePlot component.
+ *
+ * This component is intentionally "React-first":
+ * - We use D3 for math (scales, line generator, extents).
+ * - We render the SVG elements with React (no `d3.select(...).append(...)`).
+ *
+ * Tips:
+ * - For `number[]` data: you can omit `x` and `y` (defaults will work).
+ * - For object data: pass `x={(d)=>...}` and `y={(d)=>...}`.
+ * - For tooltips: pass `pointTitle` to enable hover text.
+ */
 export interface LinePlotProps<T> {
+
+    /** Data array to visualize. */
     data: T[];
 
+    /** Width of the SVG in pixels. Default: 640 */
     width?: number;
+    /** Height of the SVG in pixels. Default: 400 */
     height?: number;
+
+    /** Chart margins in pixels. */
     marginTop?: number;
     marginRight?: number;
     marginBottom?: number;
     marginLeft?: number;
 
-    // Accessors (defaults support number[])
+    /**
+     * X accessor (data-space). Default: index of the item.
+     * Example: `x={(d) => d.year}`
+     */
     x?: Accessor<T>;
+
+    /**
+     * Y accessor (data-space). Default: assumes `T` is a number.
+     * Example: `y={(d) => d.avgRating}`
+     */
     y?: Accessor<T>;
 
-    // Domain overrides
+    /**
+     * Optional domain overrides for x and y.
+     * Use this if you want consistent scales across multiple charts.
+     */
     xDomain?: [number, number];
     yDomain?: [number, number];
 
-    // Toggles
+    /** Show/hide point markers. Default: true */
     showPoints?: boolean;
+    /** Show/hide axes. Default: true */
     showAxes?: boolean;
+    /** Show/hide grid. Default: false */
     showGrid?: boolean;
 
-    // Styling
+    /** Line styling */
     stroke?: string;
     strokeWidth?: number;
+
+    /** Point styling */
     pointRadius?: number;
     pointFill?: string;
     pointStroke?: string;
 
-    // Tooltip text for points
+    /**
+     * Tooltip text shown on hover for each point.
+     * - If provided, hovering points will show a tooltip near the cursor.
+     * - If omitted, no tooltip behavior is attached.
+     *
+     * Example:
+     * `pointTitle={(d) => `${d.year}\nAvg: ${d.avg.toFixed(2)}` }`
+     */
     pointTitle?: (d: T, i: number) => string;
 
+    /** Optional className applied to the <svg> for styling. */
     className?: string;
 }
 
+/**
+ * LinePlot renders a reusable SVG line chart with optional points, axes, grid, and hover tooltip.
+ *
+ * - Generic `T` supports object-based data via accessors.
+ * - Pure React rendering (no D3 DOM mutation).
+ * - Tooltip is implemented as a floating HTML element for reliable cross-browser behavior.
+ */
 export default function LinePlot<T>({
                                         data,
                                         width = 640,
@@ -71,19 +124,24 @@ export default function LinePlot<T>({
                                     }: LinePlotProps<T>) {
     const clipId = useId();
 
-    // Tooltip state (reliable hover tooltip instead of SVG <title>)
+    // Tooltip state for hover interactions (more reliable than SVG <title> tooltips).
     const [tooltip, setTooltip] = React.useState<{
-        x: number;
-        y: number;
+        x: number; // viewport px
+        y: number; // viewport px
         text: string;
     } | null>(null);
 
+    // Default accessors:
+    // - X defaults to index
+    // - Y defaults to the datum itself (assumes `T` is number)
     const xAcc: Accessor<T> = x ?? ((_, i) => i);
     const yAcc: Accessor<T> = y ?? ((d: any) => d as number);
 
     const innerWidth = width - marginLeft - marginRight;
     const innerHeight = height - marginTop - marginBottom;
 
+    // Compute scales + path + projected point coordinates.
+    // useMemo keeps this cheap and avoids recalculating unless inputs change.
     const { xScale, yScale, pathD, points } = useMemo(() => {
         const xs = data.map((d, i) => xAcc(d, i));
         const ys = data.map((d, i) => yAcc(d, i));
@@ -93,6 +151,7 @@ export default function LinePlot<T>({
         const yd =
             yDomain ?? ((d3.extent(ys) as [number, number] | null) ?? [0, 1]);
 
+        // If domain is flat (min=max), expand it a bit to avoid NaN scale results.
         const fixDomain = (dom: [number, number]) =>
             dom[0] === dom[1] ? ([dom[0] - 1, dom[1] + 1] as [number, number]) : dom;
 
@@ -135,6 +194,7 @@ export default function LinePlot<T>({
         marginBottom,
     ]);
 
+    // Tick values for axes/grid (SVG-only).
     const xTicks = useMemo(
         () => xScale.ticks(6).map((t) => ({ t, x: xScale(t) })),
         [xScale]
@@ -144,8 +204,8 @@ export default function LinePlot<T>({
         [yScale]
     );
 
-    function showTooltip(e: React.MouseEvent<SVGCircleElement>, text: string) {
-        // viewport coords => no SVG offset math needed
+    function showTooltipAt(e: React.MouseEvent<SVGCircleElement>, text: string) {
+        // Use viewport coordinates so we don't need to measure SVG offsets.
         setTooltip({
             x: e.clientX + 12,
             y: e.clientY + 12,
@@ -161,6 +221,7 @@ export default function LinePlot<T>({
         <>
             <svg width={width} height={height} className={className}>
                 <defs>
+                    {/* Clip to prevent drawing into margins */}
                     <clipPath id={clipId}>
                         <rect
                             x={marginLeft}
@@ -171,7 +232,7 @@ export default function LinePlot<T>({
                     </clipPath>
                 </defs>
 
-                {/* Grid */}
+                {/* Grid (optional) */}
                 {showGrid && (
                     <g opacity={0.2}>
                         {xTicks.map(({ t, x }) => (
@@ -197,10 +258,10 @@ export default function LinePlot<T>({
                     </g>
                 )}
 
-                {/* Axes */}
+                {/* Axes (optional) */}
                 {showAxes && (
                     <g fontSize={10} fill="currentColor">
-                        {/* X axis */}
+                        {/* X axis baseline */}
                         <line
                             x1={marginLeft}
                             x2={width - marginRight}
@@ -220,7 +281,7 @@ export default function LinePlot<T>({
                             </g>
                         ))}
 
-                        {/* Y axis */}
+                        {/* Y axis baseline */}
                         <line
                             x1={marginLeft}
                             x2={marginLeft}
@@ -239,7 +300,9 @@ export default function LinePlot<T>({
                     </g>
                 )}
 
+                {/* Plot area */}
                 <g clipPath={`url(#${clipId})`}>
+                    {/* Line */}
                     <path
                         fill="none"
                         stroke={stroke}
@@ -247,11 +310,12 @@ export default function LinePlot<T>({
                         d={pathD}
                     />
 
+                    {/* Points (optional) */}
                     {showPoints && (
                         <g fill={pointFill} stroke={pointStroke} strokeWidth={1.5}>
                             {points.map((p) => {
-                                const text = pointTitle ? pointTitle(p.raw, p.i) : "";
                                 const hoverable = Boolean(pointTitle);
+                                const text = pointTitle ? pointTitle(p.raw, p.i) : "";
 
                                 return (
                                     <circle
@@ -261,7 +325,7 @@ export default function LinePlot<T>({
                                         r={pointRadius}
                                         style={{ cursor: hoverable ? "help" : "default" }}
                                         onMouseMove={
-                                            hoverable ? (e) => showTooltip(e, text) : undefined
+                                            hoverable ? (e) => showTooltipAt(e, text) : undefined
                                         }
                                         onMouseLeave={hoverable ? hideTooltip : undefined}
                                     />
@@ -272,6 +336,7 @@ export default function LinePlot<T>({
                 </g>
             </svg>
 
+            {/* Floating tooltip (optional, only shown when `pointTitle` is provided and a point is hovered) */}
             {tooltip && (
                 <div
                     style={{
