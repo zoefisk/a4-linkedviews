@@ -1,16 +1,11 @@
-import LinePlot from "@/components/LinePlot";
+import MoviesAvgRatingLine from "@/components/graphs/MoviesAvgRatingLine";
 
 export default function Page() {
-    const data = [10, 30, 20, 50, 40, 60, 45];
-
     return (
         <main style={{ padding: 24 }}>
-            <h1>My Line Plot</h1>
-            <LinePlot
-                data={data}
-                width={700}
-                height={400}
-            />
+            <h1>Average Movie Ratings Over Time</h1>
+
+            <MoviesAvgRatingLine />
         </main>
     );
 }
