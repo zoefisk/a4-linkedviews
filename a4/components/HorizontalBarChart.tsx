@@ -22,22 +22,13 @@ export interface HorizontalBarChartProps<T> {
     label: LabelAccessor<T>;
     value: ValueAccessor<T>;
 
-    /**
-     * If you provide xDomain, we use it exactly.
-     * Otherwise we compute it from data.
-     */
+    /** If provided, used exactly (overrides tightXDomain). */
     xDomain?: [number, number];
 
-    /**
-     * ✅ NEW: zoom x-axis to [min..max] of shown bars (with padding)
-     * This makes small rating differences look MUCH bigger.
-     */
+    /** Zoom x-axis to [min..max] of shown bars (with padding). */
     tightXDomain?: boolean;
 
-    /**
-     * ✅ NEW: how much padding to add when tightXDomain=true.
-     * Value is in "rating units" (e.g., 0.05).
-     */
+    /** Padding added when tightXDomain=true (in value units). */
     tightXPad?: number;
 
     sortDescending?: boolean;
@@ -49,7 +40,6 @@ export interface HorizontalBarChartProps<T> {
     barFill?: string;
     barTitle?: (d: T, i: number) => string;
 
-    /** Titles / axis labels */
     title?: string;
     xLabel?: string;
     yLabel?: string;
@@ -125,17 +115,14 @@ export default function HorizontalBarChart<T>({
         if (xDomain) {
             dom = xDomain;
         } else if (tightXDomain) {
-            // Zoom to the visible data range with a small pad
             const pad = Math.max(tightXPad, (vMax - vMin) * 0.15);
             dom = [vMin - pad, vMax + pad];
-
-            // Optional guard so we never exceed [0,10] for ratings
+            // For ratings, clamp into [0, 10]
             dom = [Math.max(0, dom[0]), Math.min(10, dom[1])];
         } else {
             dom = [0, vMax];
         }
 
-        // If domain collapses, expand a bit to avoid NaNs
         if (dom[0] === dom[1]) dom = [dom[0] - 1, dom[1] + 1];
 
         const xScale = d3.scaleLinear(dom, [marginLeft, width - marginRight]);
@@ -147,7 +134,8 @@ export default function HorizontalBarChart<T>({
             .range([marginTop, height - marginBottom])
             .padding(0.2);
 
-        const xTicks = xScale.ticks(6).map((t) => ({ t, x: xScale(t) }));
+        const tickCount = tightXDomain ? 6 : 5;
+        const xTicks = xScale.ticks(tickCount).map((t) => ({ t, x: xScale(t) }));
 
         return {
             bars: sliced,
@@ -175,13 +163,16 @@ export default function HorizontalBarChart<T>({
         marginBottom,
     ]);
 
-    // Bars should start at the domain minimum when tightXDomain is enabled
     const x0 = xScale(domainMin);
+
+    const tickFormat = (t: number) => {
+        // when zoomed, show 2 decimals; otherwise 1
+        return tightXDomain ? t.toFixed(2) : t.toFixed(1);
+    };
 
     return (
         <>
             <svg width={width} height={height} className={className}>
-                {/* Title */}
                 {title && (
                     <text
                         x={(marginLeft + (width - marginRight)) / 2}
@@ -194,7 +185,6 @@ export default function HorizontalBarChart<T>({
                     </text>
                 )}
 
-                {/* Grid */}
                 {showGrid && (
                     <g opacity={0.2}>
                         {xTicks.map(({ t, x }) => (
@@ -210,12 +200,11 @@ export default function HorizontalBarChart<T>({
                     </g>
                 )}
 
-                {/* Axes */}
                 {showAxes && (
                     <g fontSize={10} fill="currentColor">
-                        {/* X axis baseline */}
+                        {/* baseline should start at the plotted baseline (x0) */}
                         <line
-                            x1={marginLeft}
+                            x1={x0}
                             x2={width - marginRight}
                             y1={height - marginBottom}
                             y2={height - marginBottom}
@@ -225,14 +214,13 @@ export default function HorizontalBarChart<T>({
                             <g key={`xt-${t}`} transform={`translate(${x},${height - marginBottom})`}>
                                 <line y2={6} stroke="currentColor" />
                                 <text y={16} textAnchor="middle">
-                                    {t.toFixed(1)}
+                                    {tickFormat(t)}
                                 </text>
                             </g>
                         ))}
                     </g>
                 )}
 
-                {/* Axis labels */}
                 {xLabel && (
                     <text
                         x={(marginLeft + (width - marginRight)) / 2}
@@ -258,12 +246,10 @@ export default function HorizontalBarChart<T>({
                     </text>
                 )}
 
-                {/* Bars */}
                 {bars.map((b) => {
                     const y = yScale(b.key);
                     if (y == null) return null;
 
-                    // width is measured from domainMin baseline
                     const w = xScale(b.value) - x0;
 
                     const hoverable = Boolean(barTitle);
@@ -271,7 +257,6 @@ export default function HorizontalBarChart<T>({
 
                     return (
                         <g key={b.key}>
-                            {/* Left labels */}
                             <text
                                 x={marginLeft - 10}
                                 y={y + yScale.bandwidth() / 2}
@@ -293,7 +278,6 @@ export default function HorizontalBarChart<T>({
                                 onMouseLeave={hoverable ? hideTooltip : undefined}
                             />
 
-                            {/* Value labels */}
                             <text
                                 x={xScale(b.value) + 6}
                                 y={y + yScale.bandwidth() / 2}

@@ -104,15 +104,23 @@ export default function MoviesTopRatedBar(props: {
                 showGrid
                 maxBars={10}
                 sortDescending={true}
-                xDomain={[0, 10]}
+                tightXDomain={true}
+                tightXPad={0.03}
                 barFill="steelblue"
+                title={undefined} // keep using the <h2> above, or set a chart title here
+                xLabel="IMDb rating (zoomed)"
+                yLabel="Movie"
                 keyFn={(d) => `${d.title}__${d.year}__${d.rating}__${d.votes ?? 0}`}
                 label={(d) => `${d.title} (${d.year})`}
                 value={(d) => d.rating}
                 barTitle={(d) =>
                     `${d.title} (${d.year})
 Rating: ${d.rating.toFixed(1)}
-Votes: ${d.votes ?? "N/A"}`
+Votes: ${
+                        typeof d.votes === "number"
+                            ? d.votes.toLocaleString()
+                            : "N/A"
+                    }`
                 }
             />
         </section>
