@@ -108,3 +108,90 @@ export function computeYearSummaries(
         .filter((d) => d.count >= minCount)
         .sort((a, b) => a.year - b.year);
 }
+
+// Additions for Top Rated view
+
+export type MovieNormalized = {
+    title: string;
+    year: number;
+    rating: number;
+    votes: number | null;
+    genre: string;
+};
+
+export function toInt(v: unknown): number | null {
+    if (v == null) return null;
+    const s = String(v).trim().replace(/,/g, "");
+    const n = Number(s);
+    return Number.isFinite(n) ? Math.trunc(n) : null;
+}
+
+export function normalizeMovieFull(row: MovieRow): MovieNormalized | null {
+    const year = toNumber(row.year);
+    const rating = toNumber(row.rating);
+    if (year == null || rating == null) return null;
+
+    // guard against impossible ratings
+    if (rating <= 0 || rating > 10) return null;
+
+    const votes = toInt(row.votes);
+    return {
+        title: row.title || "(unknown title)",
+        year,
+        rating,
+        votes,
+        genre: row.genre || "",
+    };
+}
+
+export type TopMovie = {
+    title: string;
+    year: number;
+    rating: number;
+    votes: number | null;
+};
+
+export function computeTopRatedMovies(
+    rows: MovieRow[],
+    opts?: {
+        yearRange?: [number, number] | null;
+        limit?: number;
+        minVotes?: number; // optional: helps avoid weird “1 vote = 10.0” cases
+    }
+): TopMovie[] {
+    const yearRange = opts?.yearRange ?? null;
+    const limit = opts?.limit ?? 10;
+    const minVotes = opts?.minVotes ?? 0;
+
+    const normalized = rows
+        .map(normalizeMovieFull)
+        .filter(Boolean) as MovieNormalized[];
+
+    const filtered = normalized.filter((m) => {
+        if (yearRange) {
+            const [a, b] = yearRange;
+            if (m.year < a || m.year > b) return false;
+        }
+        if (minVotes > 0) {
+            const v = m.votes ?? 0;
+            if (v < minVotes) return false;
+        }
+        return true;
+    });
+
+    filtered.sort((a, b) => {
+        // primary: rating desc
+        if (b.rating !== a.rating) return b.rating - a.rating;
+        // secondary: votes desc (if present)
+        const bv = b.votes ?? -1;
+        const av = a.votes ?? -1;
+        return bv - av;
+    });
+
+    return filtered.slice(0, limit).map((m) => ({
+        title: m.title,
+        year: m.year,
+        rating: m.rating,
+        votes: m.votes,
+    }));
+}

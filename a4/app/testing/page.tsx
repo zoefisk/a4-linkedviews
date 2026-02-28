@@ -1,11 +1,10 @@
-import MoviesAvgRatingLine from "@/components/graphs/MoviesAvgRatingLine";
+// app/whatever/page.tsx
+import MoviesDashboard from "@/components/graphs/MoviesDashboard";
 
 export default function Page() {
     return (
-        <main style={{ padding: 24 }}>
-            <h1>Average Movie Ratings Over Time</h1>
-
-            <MoviesAvgRatingLine />
-        </main>
+        <div style={{ background: "#fafafa", minHeight: "100vh" }}>
+            <MoviesDashboard />
+        </div>
     );
 }
