@@ -17,10 +17,15 @@ export default function MoviesTopRatedBar(props: {
     useEffect(() => {
         let cancelled = false;
 
-        d3.csv("/movies_by_year.csv")
+        const basePath =
+            process.env.NODE_ENV === "production" ? "/a4-linkedviews" : "";
+
+        d3.csv(`${basePath}/movies_by_year.csv`)
             .then((raw) => {
                 if (cancelled) return;
-                const parsed = raw.map((r) => coerceMovieRow(r as Record<string, string>));
+                const parsed = raw.map((r) =>
+                    coerceMovieRow(r as Record<string, string>)
+                );
                 setRows(parsed);
             })
             .catch((e) => {
