@@ -15,27 +15,21 @@ export default function MoviesTopRatedBar(props: {
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        let cancelled = false;
-
         const basePath =
             process.env.NODE_ENV === "production" ? "/a4-linkedviews" : "";
 
+        console.log("[BarChart] basePath =", basePath);
+        console.log("[BarChart] CSV URL =", `${basePath}/movies_by_year.csv`);
+
         d3.csv(`${basePath}/movies_by_year.csv`)
             .then((raw) => {
-                if (cancelled) return;
-                const parsed = raw.map((r) =>
-                    coerceMovieRow(r as Record<string, string>)
-                );
-                setRows(parsed);
+                console.log("[BarChart] CSV loaded, rows =", raw.length);
+                setRows(raw.map((r) => coerceMovieRow(r as Record<string, string>)));
             })
             .catch((e) => {
-                if (cancelled) return;
-                setError(e instanceof Error ? e.message : String(e));
+                console.error("[BarChart] CSV failed", e);
+                setError(String(e));
             });
-
-        return () => {
-            cancelled = true;
-        };
     }, []);
 
     const top: TopMovie[] = useMemo(() => {
