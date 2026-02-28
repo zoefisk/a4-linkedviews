@@ -13,7 +13,10 @@ export default function MoviesAvgRatingLine(props: {
     const [rows, setRows] = useState<MovieRow[] | null>(null);
 
     useEffect(() => {
-        d3.csv("/movies_by_year.csv").then((raw) => {
+        const basePath =
+            process.env.NODE_ENV === "production" ? "/a4-linkedviews" : "";
+
+        d3.csv(`${basePath}/movies_by_year.csv`).then((raw) => {
             setRows(raw.map((r) => coerceMovieRow(r as Record<string, string>)));
         });
     }, []);

@@ -10,6 +10,11 @@ const nextConfig: NextConfig = {
     images: {
         unoptimized: true, // ✅ required for static export on Pages
     },
+
+    env: {
+        NEXT_PUBLIC_BASE_PATH: isProd ? `/${repoName}` : "",
+    }
 };
 
 export default nextConfig;
+
