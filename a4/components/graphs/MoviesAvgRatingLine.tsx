@@ -44,7 +44,7 @@ export default function MoviesAvgRatingLine(props: {
     return (
         <LinePlot<YearSummary>
             data={points}
-            title="Average IMDb Rating by Year"
+            title="Average IMDb Rating by Year (with 25K+ votes)"
             xLabel="Release year"
             yLabel="Average IMDb rating"
             x={(d) => d.year}
@@ -55,8 +55,7 @@ export default function MoviesAvgRatingLine(props: {
                 `${d.year}
 Average rating: ${d.avgRating.toFixed(2)}
 Movies that year: ${d.count}
-Top movie: ${d.bestTitle}
-Top rating: ${d.bestRating.toFixed(1)}`
+Top movie: ${d.bestTitle} (rated ${d.bestRating.toFixed(1)})`
             }
 
             enableBrush
