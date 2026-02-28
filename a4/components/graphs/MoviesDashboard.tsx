@@ -14,6 +14,7 @@ function toYearRangeFloatSafe(r: Range): Range {
 
 export default function MoviesDashboard() {
     const [brushedX, setBrushedX] = useState<Range | null>(null);
+    const [hoverYear, setHoverYear] = useState<number | null>(null);
 
     const yearRange = useMemo(() => {
         if (!brushedX) return null;
@@ -40,18 +41,30 @@ export default function MoviesDashboard() {
             }}
         >
             <header style={{ display: "grid", gap: 6 }}>
-                <h1 style={{ margin: 0, fontSize: 28, letterSpacing: -0.3 }}>Movie Ratings Explorer</h1>
+                <h1 style={{ margin: 0, fontSize: 28, letterSpacing: -0.3 }}>
+                    Movie Ratings Explorer
+                </h1>
                 <p style={{ margin: 0, opacity: 0.7 }}>
                     Brush a year range above the x-axis to filter the top-rated titles.
+                    Hover a bar to highlight that year on the line chart.
                 </p>
             </header>
 
             <section style={card}>
-                <MoviesAvgRatingLine onYearBrush={setBrushedX} />
+                <MoviesAvgRatingLine
+                    onYearBrush={setBrushedX}
+                    highlightYear={hoverYear}
+                />
                 <div style={{ marginTop: 8, fontSize: 12, opacity: 0.7 }}>
                     {yearRange ? (
                         <>
                             Selected years: <b>{yearRange[0]}</b>–<b>{yearRange[1]}</b>
+                            {hoverYear != null ? (
+                                <>
+                                    {" "}
+                                    | Hover year: <b>{hoverYear}</b>
+                                </>
+                            ) : null}
                         </>
                     ) : (
                         <>No selection yet.</>
@@ -60,7 +73,7 @@ export default function MoviesDashboard() {
             </section>
 
             <section style={card}>
-                <MoviesTopRatedBar yearRange={yearRange} />
+                <MoviesTopRatedBar yearRange={yearRange} onHoverYear={setHoverYear} />
             </section>
         </main>
     );

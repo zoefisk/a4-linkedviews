@@ -8,6 +8,7 @@ import type { MovieRow, YearSummary } from "@/lib/movies";
 
 export default function MoviesAvgRatingLine(props: {
     onYearBrush?: (range: [number, number] | null) => void;
+    highlightYear?: number | null; // ✅ NEW
 }) {
     const [rows, setRows] = useState<MovieRow[] | null>(null);
 
@@ -44,20 +45,20 @@ export default function MoviesAvgRatingLine(props: {
     return (
         <LinePlot<YearSummary>
             data={points}
-            title="Average IMDb Rating by Year (with 25K+ votes)"
+            title="Average IMDb Rating by Year"
             xLabel="Release year"
             yLabel="Average IMDb rating"
             x={(d) => d.year}
             y={(d) => d.avgRating}
+            pointRadius={3} // ✅ constant again
+            highlightX={props.highlightYear ?? null} // ✅ highlight without changing sizing logic
 
-            /* ✅ THIS IS THE MISSING PIECE */
             pointTitle={(d) =>
                 `${d.year}
 Average rating: ${d.avgRating.toFixed(2)}
 Movies that year: ${d.count}
 Top movie: ${d.bestTitle} (rated ${d.bestRating.toFixed(1)})`
             }
-
             enableBrush
             enableSnap
             snapXValues={years}

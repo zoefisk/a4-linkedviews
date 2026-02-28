@@ -7,15 +7,9 @@ import HorizontalBarChart from "@/components/HorizontalBarChart";
 import type { MovieRow, TopMovie } from "@/lib/movies";
 import { coerceMovieRow, computeTopRatedMovies } from "@/lib/movies";
 
-/**
- * Displays the top-rated movies within a brushed year range.
- *
- * This view is STRICTLY linked to the brush selection from the line chart.
- * If no brush is active, the chart intentionally shows no bars.
- */
 export default function MoviesTopRatedBar(props: {
-    /** Brushed year range from the line chart, or null if no brush */
     yearRange: [number, number] | null;
+    onHoverYear?: (year: number | null) => void; // ✅ used to highlight a point in the line chart
 }) {
     const [rows, setRows] = useState<MovieRow[] | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -50,7 +44,6 @@ export default function MoviesTopRatedBar(props: {
         return computeTopRatedMovies(rows, {
             yearRange: [lo, hi],
             limit: 10,
-            // minVotes: 10000,
         });
     }, [rows, props.yearRange]);
 
@@ -92,7 +85,7 @@ export default function MoviesTopRatedBar(props: {
             <h2>Top Rated Movies ({lo}–{hi})</h2>
 
             <p style={{ opacity: 0.7, marginTop: 4 }}>
-                Showing the 10 highest-rated titles released within the selected year range. Ratings are IMDb ratings from the dataset.
+                Hover a bar to highlight its year on the line chart.
             </p>
 
             <HorizontalBarChart<TopMovie>
@@ -103,11 +96,10 @@ export default function MoviesTopRatedBar(props: {
                 showAxes
                 showGrid
                 maxBars={10}
-                sortDescending={true}
-                tightXDomain={true}
+                sortDescending
+                tightXDomain
                 tightXPad={0.03}
                 barFill="steelblue"
-                title={undefined} // keep using the <h2> above, or set a chart title here
                 xLabel="IMDb rating (zoomed)"
                 yLabel="Movie"
                 keyFn={(d) => `${d.title}__${d.year}__${d.rating}__${d.votes ?? 0}`}
@@ -116,12 +108,11 @@ export default function MoviesTopRatedBar(props: {
                 barTitle={(d) =>
                     `${d.title} (${d.year})
 Rating: ${d.rating.toFixed(1)}
-Votes: ${
-                        typeof d.votes === "number"
-                            ? d.votes.toLocaleString()
-                            : "N/A"
-                    }`
+Votes: ${typeof d.votes === "number" ? d.votes.toLocaleString() : "N/A"}`
                 }
+                onBarHover={(dOrNull) => {
+                    props.onHoverYear?.(dOrNull ? dOrNull.year : null);
+                }}
             />
         </section>
     );

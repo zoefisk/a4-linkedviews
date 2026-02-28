@@ -3,41 +3,34 @@
 import React from "react";
 
 export type TooltipState = {
-    x: number; // viewport x (clientX)
-    y: number; // viewport y (clientY)
+    x: number;
+    y: number;
     text: string;
 };
 
-export default function CustomTooltip(props: {
-    tooltip: TooltipState | null;
-    offsetX?: number;
-    offsetY?: number;
-    maxWidth?: number;
-}) {
-    const { tooltip, offsetX = 12, offsetY = 12, maxWidth = 420 } = props;
-
-    if (!tooltip) return null;
+export default function CustomTooltip(props: { tooltip: TooltipState | null }) {
+    const t = props.tooltip;
+    if (!t) return null;
 
     return (
         <div
             style={{
                 position: "fixed",
-                left: tooltip.x + offsetX,
-                top: tooltip.y + offsetY,
-                background: "rgba(0,0,0,0.88)",
+                left: t.x + 12,
+                top: t.y + 12,
+                background: "rgba(0,0,0,0.85)",
                 color: "white",
                 padding: "8px 10px",
-                borderRadius: 10,
+                borderRadius: 8,
                 fontSize: 12,
-                lineHeight: 1.25,
+                lineHeight: 1.2,
                 whiteSpace: "pre-line",
-                pointerEvents: "none", // IMPORTANT: never block brushing/mouse
+                pointerEvents: "none",
                 zIndex: 9999,
-                maxWidth,
-                boxShadow: "0 8px 20px rgba(0,0,0,0.25)",
+                maxWidth: 360,
             }}
         >
-            {tooltip.text}
+            {t.text}
         </div>
     );
 }

@@ -38,6 +38,8 @@ export interface LinePlotProps<T> {
 
     stroke?: string;
     strokeWidth?: number;
+
+    /** Constant point radius (kept simple) */
     pointRadius?: number;
 
     /** Tooltip text for each point */
@@ -50,6 +52,9 @@ export interface LinePlotProps<T> {
     snapXValues?: number[];
 
     onBrushChange?: (sel: BrushSelection) => void;
+
+    /** ✅ NEW: highlight a particular X value (e.g. a hovered year) */
+    highlightX?: number | null;
 }
 
 /* ============================== HELPERS ============================== */
@@ -108,11 +113,11 @@ export default function LinePlot<T>({
                                         snapXValues,
 
                                         onBrushChange,
+
+                                        highlightX = null,
                                     }: LinePlotProps<T>) {
     const clipId = useId();
     const brushRef = useRef<SVGGElement | null>(null);
-
-    // IMPORTANT: useRef, not a fresh object each render
     const programmaticMoveRef = useRef(false);
 
     // ✅ custom tooltip (instant)
@@ -165,6 +170,7 @@ export default function LinePlot<T>({
                 x: xScale(xAcc(d, i)),
                 y: yScale(yAcc(d, i)),
                 raw: d,
+                xVal: xAcc(d, i),
             })),
             xTicks: xScale.ticks(8),
             yTicks: yScale.ticks(6),
@@ -204,7 +210,6 @@ export default function LinePlot<T>({
 
             let [d0, d1] = ordered(xScale.invert(selPx[0]), xScale.invert(selPx[1]));
 
-            // snap the *reported* values
             if (enableSnap && snapXValues?.length) {
                 d0 = snapToList(d0, snapXValues);
                 d1 = snapToList(d1, snapXValues);
@@ -227,7 +232,6 @@ export default function LinePlot<T>({
             const px0 = xScale(d0);
             const px1 = xScale(d1);
 
-            // Only move if it actually changes (prevents recursion/jitter)
             if (approxEqual(selPx[0], px0) && approxEqual(selPx[1], px1)) return;
 
             programmaticMoveRef.current = true;
@@ -242,9 +246,7 @@ export default function LinePlot<T>({
 
         b.on("end", (e: any) => {
             if (programmaticMoveRef.current) return;
-            // snap the brush visually on end
             maybeSnapMove(e.selection);
-            // re-emit after snapping so parent gets clean values
             emit(e.selection);
         });
 
@@ -278,15 +280,11 @@ export default function LinePlot<T>({
     /* ============================== TOOLTIP HELPERS ============================== */
 
     function showTooltip(e: React.PointerEvent<SVGCircleElement>, text: string) {
-        // instant; no debounce
         setTooltip({ x: e.clientX, y: e.clientY, text });
     }
-
     function moveTooltip(e: React.PointerEvent<SVGCircleElement>, text: string) {
-        // keep text stable + track cursor
         setTooltip({ x: e.clientX, y: e.clientY, text });
     }
-
     function hideTooltip() {
         setTooltip(null);
     }
@@ -296,20 +294,12 @@ export default function LinePlot<T>({
     return (
         <>
             <svg width={width} height={height}>
-                {/* Title */}
                 {title && (
-                    <text
-                        x={width / 2}
-                        y={28}
-                        textAnchor="middle"
-                        fontSize={16}
-                        fontWeight={600}
-                    >
+                    <text x={width / 2} y={28} textAnchor="middle" fontSize={16} fontWeight={600}>
                         {title}
                     </text>
                 )}
 
-                {/* Grid */}
                 {showGrid && (
                     <g opacity={0.25}>
                         {xTicks.map((t) => (
@@ -335,10 +325,8 @@ export default function LinePlot<T>({
                     </g>
                 )}
 
-                {/* Axes */}
                 {showAxes && (
                     <g fontSize={10}>
-                        {/* X axis */}
                         <line
                             x1={marginLeft}
                             x2={width - marginRight}
@@ -347,10 +335,7 @@ export default function LinePlot<T>({
                             stroke="currentColor"
                         />
                         {xTicks.map((t) => (
-                            <g
-                                key={`xt-${t}`}
-                                transform={`translate(${xScale(t)},${height - marginBottom})`}
-                            >
+                            <g key={`xt-${t}`} transform={`translate(${xScale(t)},${height - marginBottom})`}>
                                 <line y2={6} stroke="currentColor" />
                                 <text y={18} textAnchor="middle">
                                     {t}
@@ -358,17 +343,11 @@ export default function LinePlot<T>({
                             </g>
                         ))}
                         {xLabel && (
-                            <text
-                                x={width / 2}
-                                y={height - 8}
-                                textAnchor="middle"
-                                fontSize={12}
-                            >
+                            <text x={width / 2} y={height - 8} textAnchor="middle" fontSize={12}>
                                 {xLabel}
                             </text>
                         )}
 
-                        {/* Y axis */}
                         <line
                             x1={marginLeft}
                             x2={marginLeft}
@@ -377,10 +356,7 @@ export default function LinePlot<T>({
                             stroke="currentColor"
                         />
                         {yTicks.map((t) => (
-                            <g
-                                key={`yt-${t}`}
-                                transform={`translate(${marginLeft},${yScale(t)})`}
-                            >
+                            <g key={`yt-${t}`} transform={`translate(${marginLeft},${yScale(t)})`}>
                                 <line x2={-6} stroke="currentColor" />
                                 <text x={-10} dy="0.32em" textAnchor="end">
                                     {t}
@@ -399,49 +375,38 @@ export default function LinePlot<T>({
                     </g>
                 )}
 
-                {/* Clip */}
                 <defs>
                     <clipPath id={clipId}>
-                        <rect
-                            x={marginLeft}
-                            y={marginTop}
-                            width={innerWidth}
-                            height={innerHeight}
-                        />
+                        <rect x={marginLeft} y={marginTop} width={innerWidth} height={innerHeight} />
                     </clipPath>
                 </defs>
 
-                {/* Brush below points (keeps hover working) */}
+                {/* Brush BELOW points so hover still works */}
                 {enableBrush && <g ref={brushRef} />}
 
-                {/* Line + points */}
                 <g clipPath={`url(#${clipId})`}>
-                    <path
-                        d={pathD}
-                        fill="none"
-                        stroke={stroke}
-                        strokeWidth={strokeWidth}
-                    />
+                    <path d={pathD} fill="none" stroke={stroke} strokeWidth={strokeWidth} />
+
                     {showPoints &&
                         points.map((p) => {
                             const text = pointTitle ? pointTitle(p.raw, p.i) : "";
                             const hoverable = Boolean(pointTitle);
+
+                            const isHighlighted =
+                                highlightX != null && approxEqual(p.xVal, highlightX, 0.0001);
 
                             return (
                                 <circle
                                     key={p.i}
                                     cx={p.x}
                                     cy={p.y}
-                                    r={pointRadius}
-                                    fill="white"
-                                    stroke="black"
+                                    r={isHighlighted ? pointRadius + 2 : pointRadius}
+                                    fill={isHighlighted ? "black" : "white"}
+                                    stroke={isHighlighted ? "black" : "black"}
+                                    strokeWidth={isHighlighted ? 2 : 1}
                                     style={{ cursor: hoverable ? "help" : "default" }}
-                                    onPointerEnter={
-                                        hoverable ? (e) => showTooltip(e, text) : undefined
-                                    }
-                                    onPointerMove={
-                                        hoverable ? (e) => moveTooltip(e, text) : undefined
-                                    }
+                                    onPointerEnter={hoverable ? (e) => showTooltip(e, text) : undefined}
+                                    onPointerMove={hoverable ? (e) => moveTooltip(e, text) : undefined}
                                     onPointerLeave={hoverable ? hideTooltip : undefined}
                                 />
                             );
@@ -449,7 +414,6 @@ export default function LinePlot<T>({
                 </g>
             </svg>
 
-            {/* ✅ Custom tooltip overlay */}
             <CustomTooltip tooltip={tooltip} />
         </>
     );
