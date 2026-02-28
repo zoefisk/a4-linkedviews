@@ -1,3 +1,4 @@
+// src/components/graphs/MoviesTopRatedBar.tsx
 "use client";
 
 import * as d3 from "d3";
@@ -6,12 +7,11 @@ import HorizontalBarChart from "@/components/HorizontalBarChart";
 import type { MovieRow, TopMovie } from "@/lib/movies";
 import { coerceMovieRow, computeTopRatedMovies } from "@/lib/movies";
 
-const DEBUG_BAR = true; // set false to silence logs
-
 /**
  * Displays the top-rated movies within a brushed year range.
  *
- * STRICT: if no brush selection, intentionally shows no bars.
+ * This view is STRICTLY linked to the brush selection from the line chart.
+ * If no brush is active, the chart intentionally shows no bars.
  */
 export default function MoviesTopRatedBar(props: {
     /** Brushed year range from the line chart, or null if no brush */
@@ -20,7 +20,6 @@ export default function MoviesTopRatedBar(props: {
     const [rows, setRows] = useState<MovieRow[] | null>(null);
     const [error, setError] = useState<string | null>(null);
 
-    // Load CSV once
     useEffect(() => {
         let cancelled = false;
 
@@ -41,16 +40,12 @@ export default function MoviesTopRatedBar(props: {
     }, []);
 
     const top: TopMovie[] = useMemo(() => {
-        if (DEBUG_BAR) console.log("[MoviesTopRatedBar] useMemo yearRange =", props.yearRange);
-
         if (!rows) return [];
         if (!props.yearRange) return [];
 
         const [a, b] = props.yearRange;
         const lo = Math.floor(Math.min(a, b));
         const hi = Math.ceil(Math.max(a, b));
-
-        if (DEBUG_BAR) console.log("[MoviesTopRatedBar] computing top for ints =", [lo, hi]);
 
         return computeTopRatedMovies(rows, {
             yearRange: [lo, hi],
@@ -82,9 +77,7 @@ export default function MoviesTopRatedBar(props: {
     if (top.length === 0) {
         return (
             <section>
-                <h2>
-                    Top Rated Movies ({lo}–{hi})
-                </h2>
+                <h2>Top Rated Movies ({lo}–{hi})</h2>
                 <p style={{ opacity: 0.8 }}>
                     No titles found in that brushed range.
                     <br />
@@ -96,12 +89,10 @@ export default function MoviesTopRatedBar(props: {
 
     return (
         <section>
-            <h2>
-                Top Rated Movies ({lo}–{hi})
-            </h2>
+            <h2>Top Rated Movies ({lo}–{hi})</h2>
 
             <p style={{ opacity: 0.7, marginTop: 4 }}>
-                Showing the 10 highest-rated titles released within the selected year range.
+                Showing the 10 highest-rated titles released within the selected year range. Ratings are IMDb ratings from the dataset.
             </p>
 
             <HorizontalBarChart<TopMovie>

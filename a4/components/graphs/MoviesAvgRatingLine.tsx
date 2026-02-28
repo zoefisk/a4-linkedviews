@@ -3,20 +3,11 @@
 
 import * as d3 from "d3";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import LinePlot from "@/components/LinePlot";
+import LinePlot, { BrushSelection } from "@/components/LinePlot";
 import { coerceMovieRow, computeYearSummaries } from "@/lib/movies";
 import type { MovieRow, YearSummary } from "@/lib/movies";
 
-/**
- * Line chart of average IMDb rating by year.
- *
- * Emits brushed year ranges back to the parent dashboard (linked view).
- */
 export default function MoviesAvgRatingLine(props: {
-    /**
-     * Receives the brushed x-range (as floats) or null if cleared.
-     * The dashboard may round to integer years for filtering.
-     */
     onYearBrush?: (range: [number, number] | null) => void;
 }) {
     const [rows, setRows] = useState<MovieRow[] | null>(null);
@@ -43,11 +34,11 @@ export default function MoviesAvgRatingLine(props: {
 
     const points: YearSummary[] = useMemo(() => {
         if (!rows) return [];
-        return computeYearSummaries(rows, 3); // minCount=3 helps avoid nonsense years
+        return computeYearSummaries(rows, 3);
     }, [rows]);
 
     const handleBrushChange = useCallback(
-        (sel: { x: [number, number] | null; y: [number, number] | null }) => {
+        (sel: BrushSelection) => {
             if (!props.onYearBrush) return;
 
             if (!sel.x) {
@@ -55,9 +46,9 @@ export default function MoviesAvgRatingLine(props: {
                 return;
             }
 
-            const [a, b] = sel.x;
-            const lo = Math.min(a, b);
-            const hi = Math.max(a, b);
+            // LinePlot snaps, but we still guard ordering + integer years here.
+            const lo = Math.floor(Math.min(sel.x[0], sel.x[1]));
+            const hi = Math.ceil(Math.max(sel.x[0], sel.x[1]));
             props.onYearBrush([lo, hi]);
         },
         [props.onYearBrush]
@@ -69,26 +60,23 @@ export default function MoviesAvgRatingLine(props: {
 
     return (
         <section>
-            <h2 style={{ marginTop: 0 }}>Average IMDb Rating by Year</h2>
+            <h2>Average IMDb Rating by Year</h2>
 
             <LinePlot<YearSummary>
                 data={points}
                 width={900}
                 height={420}
                 showGrid
+                showAxes
                 x={(d) => d.year}
                 y={(d) => d.avgRating}
                 pointTitle={(d) =>
-                    `${d.year}
-Avg rating: ${d.avgRating.toFixed(2)} (n=${d.count})
-Top movie: ${d.bestTitle} (${d.bestRating.toFixed(1)})`
+                    `${d.year}\nAvg rating: ${d.avgRating.toFixed(2)} (n=${d.count})\nTop movie: ${d.bestTitle} (${d.bestRating.toFixed(1)})`
                 }
                 enableBrush
                 brushMode="x"
-                brushPlacement="plot"      // ✅ full plot height for X brushing
-                snapX={1}                  // ✅ snap to whole years
-                showBrushValues            // ✅ show endpoints on the brush itself
-                formatBrushX={(v) => `${Math.round(v)}`}
+                enableSnap
+                xStep={1}
                 onBrushChange={handleBrushChange}
             />
         </section>
