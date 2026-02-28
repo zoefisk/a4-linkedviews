@@ -19,3 +19,7 @@ Design achievements:
 * Though simple, the site overall looks clean and well styled
 * Graphs have variable scales that demonstrate more difference between values (for example, the bar chart doesn't have dramatically different values but the scale is expanded to show the difference)
 * Added a hover-based tooltip for both graphs that shows additional data. On the line chart in particular, if you hover on a dot, representing a year, it shows the number of movies included, the average rating, and the top movie of that year with its associated rating. 
+
+AI Use:
+
+I used ChatGPT to bounce ideas off of and help with debugging. I definitely had a hard time figuring out how to make the graphs affect one another, so it gave me several hints to move along the way. However, when I make sure to properly take the time to comprehend and break down what it gives me to make sure that it actually makes sense
