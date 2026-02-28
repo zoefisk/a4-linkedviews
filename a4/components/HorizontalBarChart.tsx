@@ -1,85 +1,45 @@
-// src/components/HorizontalBarChart.tsx
 "use client";
 
 import * as d3 from "d3";
 import React, { useMemo } from "react";
 
-/**
- * Accessor returning a string label.
- */
 type LabelAccessor<T> = (d: T, i: number) => string;
-
-/**
- * Accessor returning a numeric value.
- */
 type ValueAccessor<T> = (d: T, i: number) => number;
-
-/**
- * Accessor returning a stable unique key.
- * NOTE: Use this when labels/titles can repeat (very common in movie datasets).
- */
 type KeyAccessor<T> = (d: T, i: number) => string;
 
-/**
- * Props for a reusable horizontal bar chart.
- *
- * This chart is intended for ranked / categorical comparisons
- * (e.g. top movies, top values within a brushed range).
- */
 export interface HorizontalBarChartProps<T> {
-    /** Data items */
     data: T[];
 
-    /** SVG width (px) */
     width?: number;
-    /** SVG height (px) */
     height?: number;
 
-    /** Margins */
     marginTop?: number;
     marginRight?: number;
     marginBottom?: number;
     marginLeft?: number;
 
-    /** Stable key generator (recommended) */
     keyFn?: KeyAccessor<T>;
-
-    /** Category label accessor */
     label: LabelAccessor<T>;
-
-    /** Numeric value accessor */
     value: ValueAccessor<T>;
 
-    /** Optional fixed x-domain */
     xDomain?: [number, number];
-
-    /** Sort bars by value descending */
     sortDescending?: boolean;
-
-    /** Maximum number of bars to display */
     maxBars?: number;
 
-    /** Toggle axes */
     showAxes?: boolean;
-
-    /** Toggle grid lines */
     showGrid?: boolean;
 
-    /** Bar fill color */
     barFill?: string;
-
-    /** Tooltip text on hover (if omitted, no tooltip) */
     barTitle?: (d: T, i: number) => string;
+
+    /** Titles / axis labels */
+    title?: string;
+    xLabel?: string;
+    yLabel?: string;
 
     className?: string;
 }
 
-/**
- * Generic horizontal bar chart.
- *
- * Designed to pair naturally with brushing selections
- * from other views (e.g., a line chart).
- */
 export default function HorizontalBarChart<T>({
                                                   data,
                                                   width = 700,
@@ -102,29 +62,16 @@ export default function HorizontalBarChart<T>({
 
                                                   barFill = "currentColor",
                                                   barTitle,
+                                                  title,
+                                                  xLabel,
+                                                  yLabel,
                                                   className,
                                               }: HorizontalBarChartProps<T>) {
-    const innerWidth = width - marginLeft - marginRight;
-    const innerHeight = height - marginTop - marginBottom;
-
-    /**
-     * Tooltip state (fixed-position div tooltip like LinePlot).
-     * Using viewport coords keeps the math simple and reliable inside SVG.
-     */
-    const [tooltip, setTooltip] = React.useState<{
-        x: number;
-        y: number;
-        text: string;
-    } | null>(null);
+    const [tooltip, setTooltip] = React.useState<{ x: number; y: number; text: string } | null>(null);
 
     function showTooltipAt(e: React.MouseEvent<SVGRectElement>, text: string) {
-        setTooltip({
-            x: e.clientX + 12,
-            y: e.clientY + 12,
-            text,
-        });
+        setTooltip({ x: e.clientX + 12, y: e.clientY + 12, text });
     }
-
     function hideTooltip() {
         setTooltip(null);
     }
@@ -132,7 +79,6 @@ export default function HorizontalBarChart<T>({
     const { bars, xScale, yScale, xTicks } = useMemo(() => {
         const projected = data
             .map((d, i) => ({
-                // IMPORTANT: default key is index, but duplicates happen easily if you use label as key.
                 key: keyFn ? keyFn(d, i) : String(i),
                 raw: d,
                 label: label(d, i),
@@ -141,23 +87,14 @@ export default function HorizontalBarChart<T>({
             }))
             .filter((d) => Number.isFinite(d.value));
 
-        const sorted = sortDescending
-            ? [...projected].sort((a, b) => b.value - a.value)
-            : projected;
-
+        const sorted = sortDescending ? [...projected].sort((a, b) => b.value - a.value) : projected;
         const sliced = typeof maxBars === "number" ? sorted.slice(0, maxBars) : sorted;
 
         const xMax = xDomain?.[1] ?? d3.max(sliced, (d) => d.value) ?? 1;
 
-        const xScale = d3.scaleLinear(xDomain ?? [0, xMax], [
-            marginLeft,
-            width - marginRight,
-        ]);
+        const xScale = d3.scaleLinear(xDomain ?? [0, xMax], [marginLeft, width - marginRight]);
 
-        // If labels repeat, scaleBand domain will collapse duplicates.
-        // We solve this by using unique ids for the band scale domain.
         const bandIds = sliced.map((d) => d.key);
-
         const yScale = d3
             .scaleBand<string>()
             .domain(bandIds)
@@ -165,39 +102,30 @@ export default function HorizontalBarChart<T>({
             .padding(0.2);
 
         const xTicks = xScale.ticks(5).map((t) => ({ t, x: xScale(t) }));
-
         return { bars: sliced, xScale, yScale, xTicks };
-    }, [
-        data,
-        keyFn,
-        label,
-        value,
-        sortDescending,
-        maxBars,
-        xDomain,
-        width,
-        height,
-        marginLeft,
-        marginRight,
-        marginTop,
-        marginBottom,
-    ]);
+    }, [data, keyFn, label, value, sortDescending, maxBars, xDomain, width, height, marginLeft, marginRight, marginTop, marginBottom]);
 
     return (
         <>
             <svg width={width} height={height} className={className}>
+                {/* Title */}
+                {title && (
+                    <text
+                        x={(marginLeft + (width - marginRight)) / 2}
+                        y={Math.max(14, marginTop - 6)}
+                        textAnchor="middle"
+                        fontSize={14}
+                        fontFamily='ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial'
+                    >
+                        {title}
+                    </text>
+                )}
+
                 {/* Grid */}
                 {showGrid && (
                     <g opacity={0.2}>
                         {xTicks.map(({ t, x }) => (
-                            <line
-                                key={`gx-${t}`}
-                                x1={x}
-                                x2={x}
-                                y1={marginTop}
-                                y2={height - marginBottom}
-                                stroke="currentColor"
-                            />
+                            <line key={`gx-${t}`} x1={x} x2={x} y1={marginTop} y2={height - marginBottom} stroke="currentColor" />
                         ))}
                     </g>
                 )}
@@ -205,7 +133,6 @@ export default function HorizontalBarChart<T>({
                 {/* Axes */}
                 {showAxes && (
                     <g fontSize={10} fill="currentColor">
-                        {/* X axis */}
                         <line
                             x1={marginLeft}
                             x2={width - marginRight}
@@ -224,6 +151,32 @@ export default function HorizontalBarChart<T>({
                     </g>
                 )}
 
+                {/* Axis labels */}
+                {xLabel && (
+                    <text
+                        x={(marginLeft + (width - marginRight)) / 2}
+                        y={height - 4}
+                        textAnchor="middle"
+                        fontSize={12}
+                        opacity={0.8}
+                        fontFamily='ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial'
+                    >
+                        {xLabel}
+                    </text>
+                )}
+
+                {yLabel && (
+                    <text
+                        transform={`translate(14, ${(marginTop + (height - marginBottom)) / 2}) rotate(-90)`}
+                        textAnchor="middle"
+                        fontSize={12}
+                        opacity={0.8}
+                        fontFamily='ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial'
+                    >
+                        {yLabel}
+                    </text>
+                )}
+
                 {/* Bars */}
                 {bars.map((b) => {
                     const y = yScale(b.key);
@@ -235,18 +188,10 @@ export default function HorizontalBarChart<T>({
 
                     return (
                         <g key={b.key}>
-                            {/* Left label */}
-                            <text
-                                x={marginLeft - 10}
-                                y={y + yScale.bandwidth() / 2}
-                                dy="0.32em"
-                                textAnchor="end"
-                                fontSize={10}
-                            >
+                            <text x={marginLeft - 10} y={y + yScale.bandwidth() / 2} dy="0.32em" textAnchor="end" fontSize={10}>
                                 {b.label}
                             </text>
 
-                            {/* Bar rect */}
                             <rect
                                 x={xScale(0)}
                                 y={y}
@@ -258,13 +203,7 @@ export default function HorizontalBarChart<T>({
                                 onMouseLeave={hoverable ? hideTooltip : undefined}
                             />
 
-                            {/* Value label on right */}
-                            <text
-                                x={xScale(b.value) + 6}
-                                y={y + yScale.bandwidth() / 2}
-                                dy="0.32em"
-                                fontSize={10}
-                            >
+                            <text x={xScale(b.value) + 6} y={y + yScale.bandwidth() / 2} dy="0.32em" fontSize={10}>
                                 {b.value.toFixed(2)}
                             </text>
                         </g>
@@ -272,7 +211,6 @@ export default function HorizontalBarChart<T>({
                 })}
             </svg>
 
-            {/* Tooltip (reliable hover tooltip instead of SVG <title>) */}
             {tooltip && (
                 <div
                     style={{

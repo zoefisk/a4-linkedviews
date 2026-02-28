@@ -1,20 +1,17 @@
-// src/components/LinePlot.tsx
 "use client";
 
 import React, { useEffect, useId, useMemo, useRef } from "react";
 import * as d3 from "d3";
-import { brush, brushX, brushY, BrushBehavior } from "d3-brush";
+import { brushX } from "d3-brush";
 import { select } from "d3-selection";
 
 /* ============================== TYPES ============================== */
 
 type Accessor<T> = (d: T, i: number) => number;
 
-export type BrushMode = "x" | "y" | "xy";
-
 export type BrushSelection = {
     x: [number, number] | null;
-    y: [number, number] | null;
+    y: null;
 };
 
 export interface LinePlotProps<T> {
@@ -26,6 +23,10 @@ export interface LinePlotProps<T> {
     marginRight?: number;
     marginBottom?: number;
     marginLeft?: number;
+
+    title?: string;
+    xLabel?: string;
+    yLabel?: string;
 
     x?: Accessor<T>;
     y?: Accessor<T>;
@@ -41,12 +42,10 @@ export interface LinePlotProps<T> {
     pointTitle?: (d: T, i: number) => string;
 
     enableBrush?: boolean;
-    brushMode?: BrushMode;
 
-    /** Snap domain values (ex: years) */
+    /** Snap to discrete X values (e.g. years) */
     enableSnap?: boolean;
-    xStep?: number;
-    yStep?: number;
+    snapXValues?: number[];
 
     onBrushChange?: (sel: BrushSelection) => void;
 }
@@ -57,27 +56,33 @@ function ordered(a: number, b: number): [number, number] {
     return a <= b ? [a, b] : [b, a];
 }
 
-function snap(v: number, step: number) {
-    return step > 0 ? Math.round(v / step) * step : v;
-}
-
-function domainsEqual(a: BrushSelection, b: BrushSelection) {
-    return (
-        JSON.stringify(a.x) === JSON.stringify(b.x) &&
-        JSON.stringify(a.y) === JSON.stringify(b.y)
-    );
+function snapToList(v: number, values: number[]) {
+    let best = values[0];
+    let bestDist = Math.abs(v - best);
+    for (const t of values) {
+        const d = Math.abs(v - t);
+        if (d < bestDist) {
+            best = t;
+            bestDist = d;
+        }
+    }
+    return best;
 }
 
 /* ============================== COMPONENT ============================== */
 
 export default function LinePlot<T>({
                                         data,
-                                        width = 800,
-                                        height = 400,
-                                        marginTop = 20,
-                                        marginRight = 20,
-                                        marginBottom = 30,
-                                        marginLeft = 40,
+                                        width = 900,
+                                        height = 420,
+                                        marginTop = 64,
+                                        marginRight = 24,
+                                        marginBottom = 56,
+                                        marginLeft = 64,
+
+                                        title,
+                                        xLabel,
+                                        yLabel,
 
                                         x,
                                         y,
@@ -93,22 +98,13 @@ export default function LinePlot<T>({
                                         pointTitle,
 
                                         enableBrush = false,
-                                        brushMode = "x",
-
                                         enableSnap = false,
-                                        xStep = 1,
-                                        yStep = 1,
+                                        snapXValues,
 
                                         onBrushChange,
                                     }: LinePlotProps<T>) {
     const clipId = useId();
     const brushRef = useRef<SVGGElement | null>(null);
-
-    /** IMPORTANT: last emitted domain */
-    const lastEmittedRef = useRef<BrushSelection>({
-        x: null,
-        y: null,
-    });
 
     const xAcc: Accessor<T> = x ?? ((_, i) => i);
     const yAcc: Accessor<T> = y ?? ((d: any) => d as number);
@@ -122,29 +118,23 @@ export default function LinePlot<T>({
         const xs = data.map((d, i) => xAcc(d, i));
         const ys = data.map((d, i) => yAcc(d, i));
 
-        const xDomain = (d3.extent(xs) as [number, number]) ?? [0, 1];
-        const yDomain = (d3.extent(ys) as [number, number]) ?? [0, 1];
+        const fix = (d: [number, number]) =>
+            d[0] === d[1] ? ([d[0] - 1, d[1] + 1] as [number, number]) : d;
 
-        // Avoid zero-span domains (can break scales/ticks)
-        const fixDomain = (dom: [number, number]) =>
-            dom[0] === dom[1] ? ([dom[0] - 1, dom[1] + 1] as [number, number]) : dom;
+        const xScale = d3.scaleLinear(
+            fix(d3.extent(xs) as [number, number]),
+            [marginLeft, width - marginRight]
+        );
 
-        const xScale = d3.scaleLinear(fixDomain(xDomain), [
-            marginLeft,
-            width - marginRight,
-        ]);
-        const yScale = d3.scaleLinear(fixDomain(yDomain), [
-            height - marginBottom,
-            marginTop,
-        ]);
+        const yScale = d3.scaleLinear(
+            fix(d3.extent(ys) as [number, number]),
+            [height - marginBottom, marginTop]
+        );
 
         const line = d3
             .line<T>()
             .x((d, i) => xScale(xAcc(d, i)))
             .y((d, i) => yScale(yAcc(d, i)));
-
-        const xTicks = xScale.ticks(6).map((t) => ({ t, px: xScale(t) }));
-        const yTicks = yScale.ticks(6).map((t) => ({ t, py: yScale(t) }));
 
         return {
             xScale,
@@ -156,27 +146,15 @@ export default function LinePlot<T>({
                 y: yScale(yAcc(d, i)),
                 raw: d,
             })),
-            xTicks,
-            yTicks,
+            xTicks: xScale.ticks(8),
+            yTicks: yScale.ticks(6),
         };
-    }, [
-        data,
-        xAcc,
-        yAcc,
-        width,
-        height,
-        marginLeft,
-        marginRight,
-        marginTop,
-        marginBottom,
-    ]);
+    }, [data, xAcc, yAcc, width, height, marginLeft, marginRight, marginTop, marginBottom]);
 
-    /* ============================== BRUSH ============================== */
+    /* ============================== BRUSH (SAFE) ============================== */
 
     useEffect(() => {
         if (!enableBrush || !brushRef.current) return;
-
-        console.log("[LinePlot] initializing brush");
 
         const g = select(brushRef.current);
 
@@ -185,92 +163,44 @@ export default function LinePlot<T>({
             [width - marginRight, height - marginBottom],
         ];
 
-        let b: BrushBehavior<any>;
+        const b = brushX().extent(extent);
 
-        if (brushMode === "x") b = brushX();
-        else if (brushMode === "y") b = brushY();
-        else b = brush();
-
-        b.extent(extent);
-
-        function readAndEmit(selPx: any, phase: string) {
-            console.log(`[LinePlot] readAndEmit(${phase})`, selPx);
-
+        function emit(selPx: [number, number] | null) {
             if (!selPx) {
-                const cleared: BrushSelection = { x: null, y: null };
-                if (!domainsEqual(lastEmittedRef.current, cleared)) {
-                    lastEmittedRef.current = cleared;
-                    onBrushChange?.(cleared);
-                }
+                onBrushChange?.({ x: null, y: null });
                 return;
             }
 
-            let next: BrushSelection = { x: null, y: null };
+            let [d0, d1] = ordered(
+                xScale.invert(selPx[0]),
+                xScale.invert(selPx[1])
+            );
 
-            if (brushMode === "x") {
-                const [p0, p1] = selPx as [number, number];
-                let [d0, d1] = ordered(xScale.invert(p0), xScale.invert(p1));
-
-                if (enableSnap) {
-                    d0 = snap(d0, xStep);
-                    d1 = snap(d1, xStep);
-                }
-
-                next.x = [d0, d1];
-            } else if (brushMode === "y") {
-                const [p0, p1] = selPx as [number, number];
-                let [d0, d1] = ordered(yScale.invert(p0), yScale.invert(p1));
-
-                if (enableSnap) {
-                    d0 = snap(d0, yStep);
-                    d1 = snap(d1, yStep);
-                }
-
-                next.y = [d0, d1];
-            } else {
-                const [[px0, py0], [px1, py1]] = selPx as [
-                    [number, number],
-                    [number, number]
-                ];
-
-                let [x0, x1] = ordered(xScale.invert(px0), xScale.invert(px1));
-                let [y0, y1] = ordered(yScale.invert(py0), yScale.invert(py1));
-
-                if (enableSnap) {
-                    x0 = snap(x0, xStep);
-                    x1 = snap(x1, xStep);
-                    y0 = snap(y0, yStep);
-                    y1 = snap(y1, yStep);
-                }
-
-                next = { x: [x0, x1], y: [y0, y1] };
+            if (enableSnap && snapXValues?.length) {
+                d0 = snapToList(d0, snapXValues);
+                d1 = snapToList(d1, snapXValues);
             }
 
-            if (!domainsEqual(lastEmittedRef.current, next)) {
-                console.log("[LinePlot] emit", next);
-                lastEmittedRef.current = next;
-                onBrushChange?.(next);
-            }
+            onBrushChange?.({ x: [d0, d1], y: null });
         }
 
-        b.on("start", (e: any) => readAndEmit(e.selection, "start"));
-        b.on("brush", (e: any) => readAndEmit(e.selection, "brush"));
-        b.on("end", (e: any) => readAndEmit(e.selection, "end"));
+        b.on("brush end", (e) => emit(e.selection));
 
         g.call(b as any);
 
+        g.on("dblclick", () => {
+            g.call((b as any).move, null);
+            emit(null);
+        });
+
         return () => {
-            console.log("[LinePlot] cleanup brush");
             g.selectAll("*").remove();
         };
     }, [
         enableBrush,
-        brushMode,
         enableSnap,
-        xStep,
-        yStep,
+        snapXValues,
         xScale,
-        yScale,
         width,
         height,
         marginLeft,
@@ -284,105 +214,71 @@ export default function LinePlot<T>({
 
     return (
         <svg width={width} height={height}>
+            {title && (
+                <text x={width / 2} y={24} textAnchor="middle" fontSize={16} fontWeight={600}>
+                    {title}
+                </text>
+            )}
+
+            {showGrid && (
+                <g opacity={0.25}>
+                    {xTicks.map((t) => (
+                        <line key={t} x1={xScale(t)} x2={xScale(t)} y1={marginTop} y2={height - marginBottom} stroke="currentColor" />
+                    ))}
+                    {yTicks.map((t) => (
+                        <line key={t} y1={yScale(t)} y2={yScale(t)} x1={marginLeft} x2={width - marginRight} stroke="currentColor" />
+                    ))}
+                </g>
+            )}
+
+            {showAxes && (
+                <g fontSize={10}>
+                    {/* X */}
+                    <line x1={marginLeft} x2={width - marginRight} y1={height - marginBottom} y2={height - marginBottom} stroke="currentColor" />
+                    {xTicks.map((t) => (
+                        <g key={t} transform={`translate(${xScale(t)},${height - marginBottom})`}>
+                            <line y2={6} stroke="currentColor" />
+                            <text y={18} textAnchor="middle">{t}</text>
+                        </g>
+                    ))}
+                    {xLabel && (
+                        <text x={width / 2} y={height - 8} textAnchor="middle" fontSize={12}>
+                            {xLabel}
+                        </text>
+                    )}
+
+                    {/* Y */}
+                    <line x1={marginLeft} x2={marginLeft} y1={marginTop} y2={height - marginBottom} stroke="currentColor" />
+                    {yTicks.map((t) => (
+                        <g key={t} transform={`translate(${marginLeft},${yScale(t)})`}>
+                            <line x2={-6} stroke="currentColor" />
+                            <text x={-10} dy="0.32em" textAnchor="end">{t}</text>
+                        </g>
+                    ))}
+                    {yLabel && (
+                        <text transform={`translate(16 ${height / 2}) rotate(-90)`} textAnchor="middle" fontSize={12}>
+                            {yLabel}
+                        </text>
+                    )}
+                </g>
+            )}
+
             <defs>
                 <clipPath id={clipId}>
-                    <rect
-                        x={marginLeft}
-                        y={marginTop}
-                        width={innerWidth}
-                        height={innerHeight}
-                    />
+                    <rect x={marginLeft} y={marginTop} width={innerWidth} height={innerHeight} />
                 </clipPath>
             </defs>
 
-            {/* Grid */}
-            {showGrid && (
-                <g opacity={0.25}>
-                    {xTicks.map(({ t, px }) => (
-                        <line
-                            key={`gx-${t}`}
-                            x1={px}
-                            x2={px}
-                            y1={marginTop}
-                            y2={height - marginBottom}
-                            stroke="currentColor"
-                        />
-                    ))}
-                    {yTicks.map(({ t, py }) => (
-                        <line
-                            key={`gy-${t}`}
-                            x1={marginLeft}
-                            x2={width - marginRight}
-                            y1={py}
-                            y2={py}
-                            stroke="currentColor"
-                        />
-                    ))}
-                </g>
-            )}
-
-            {/* Axes + tick labels */}
-            {showAxes && (
-                <g fontSize={10} fill="currentColor">
-                    {/* X axis baseline */}
-                    <line
-                        x1={marginLeft}
-                        x2={width - marginRight}
-                        y1={height - marginBottom}
-                        y2={height - marginBottom}
-                        stroke="currentColor"
-                    />
-                    {xTicks.map(({ t, px }) => (
-                        <g
-                            key={`xt-${t}`}
-                            transform={`translate(${px}, ${height - marginBottom})`}
-                        >
-                            <line y2={6} stroke="currentColor" />
-                            <text y={16} textAnchor="middle">
-                                {t}
-                            </text>
-                        </g>
-                    ))}
-
-                    {/* Y axis baseline */}
-                    <line
-                        x1={marginLeft}
-                        x2={marginLeft}
-                        y1={marginTop}
-                        y2={height - marginBottom}
-                        stroke="currentColor"
-                    />
-                    {yTicks.map(({ t, py }) => (
-                        <g key={`yt-${t}`} transform={`translate(${marginLeft}, ${py})`}>
-                            <line x2={-6} stroke="currentColor" />
-                            <text x={-10} dy="0.32em" textAnchor="end">
-                                {t}
-                            </text>
-                        </g>
-                    ))}
-                </g>
-            )}
-
-            {/* Plot */}
             <g clipPath={`url(#${clipId})`}>
                 <path d={pathD} fill="none" stroke={stroke} strokeWidth={strokeWidth} />
-
                 {showPoints &&
                     points.map((p) => (
-                        <circle
-                            key={p.i}
-                            cx={p.x}
-                            cy={p.y}
-                            r={pointRadius}
-                            fill="white"
-                            stroke="black"
-                        >
-                            {pointTitle ? <title>{pointTitle(p.raw, p.i)}</title> : null}
+                        <circle key={p.i} cx={p.x} cy={p.y} r={pointRadius} fill="white" stroke="black">
+                            {pointTitle && <title>{pointTitle(p.raw, p.i)}</title>}
                         </circle>
                     ))}
             </g>
 
-            {/* Brush overlay */}
             {enableBrush && <g ref={brushRef} />}
         </svg>
     );
