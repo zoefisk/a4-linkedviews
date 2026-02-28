@@ -7,6 +7,7 @@ const nextConfig: NextConfig = {
     output: "export", // ✅ makes /out for GitHub Pages
     basePath: isProd ? `/${repoName}` : "",
     assetPrefix: isProd ? `/${repoName}/` : "",
+    trailingSlash: true,
     images: {
         unoptimized: true, // ✅ required for static export on Pages
     },
