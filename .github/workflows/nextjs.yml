@@ -1,3 +1,4 @@
+# .github/workflows/deploy.yml
 name: Deploy Next.js site to Pages
 
 on:
@@ -14,69 +15,38 @@ concurrency:
   group: "pages"
   cancel-in-progress: false
 
-# ✅ Run all shell commands from the Next.js subfolder
-defaults:
-  run:
-    working-directory: a4
-
 jobs:
   build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: a4  # ✅ IMPORTANT: run everything inside /a4
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Detect package manager (in /a4)
-        id: detect-package-manager
-        run: |
-          if [ -f "yarn.lock" ]; then
-            echo "manager=yarn" >> $GITHUB_OUTPUT
-            echo "command=install" >> $GITHUB_OUTPUT
-            echo "runner=yarn" >> $GITHUB_OUTPUT
-            exit 0
-          elif [ -f "package-lock.json" ]; then
-            echo "manager=npm" >> $GITHUB_OUTPUT
-            echo "command=ci" >> $GITHUB_OUTPUT
-            echo "runner=npx --no-install" >> $GITHUB_OUTPUT
-            exit 0
-          elif [ -f "package.json" ]; then
-            echo "manager=npm" >> $GITHUB_OUTPUT
-            echo "command=install" >> $GITHUB_OUTPUT
-            echo "runner=npx --no-install" >> $GITHUB_OUTPUT
-            exit 0
-          else
-            echo "Unable to determine package manager in /a4"
-            exit 1
-          fi
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: ${{ steps.detect-package-manager.outputs.manager }}
-          cache-dependency-path: a4/package-lock.json
+          cache: npm
+          cache-dependency-path: a4/package-lock.json # ✅ cache correct lockfile
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
-
-      - name: Restore Next cache
-        uses: actions/cache@v4
         with:
-          path: a4/.next/cache
-          key: ${{ runner.os }}-nextjs-${{ hashFiles('a4/package-lock.json', 'a4/yarn.lock') }}-${{ hashFiles('a4/**.[jt]s', 'a4/**.[jt]sx', 'a4/**.[jt]sxx', 'a4/**.[jt]sx') }}
-          restore-keys: |
-            ${{ runner.os }}-nextjs-${{ hashFiles('a4/package-lock.json', 'a4/yarn.lock') }}-
+          static_site_generator: next
 
       - name: Install dependencies
-        run: ${{ steps.detect-package-manager.outputs.manager }} ${{ steps.detect-package-manager.outputs.command }}
+        run: npm ci
 
       - name: Build (static export)
-        run: ${{ steps.detect-package-manager.outputs.runner }} next build
+        run: npm run build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: a4/out
+          path: a4/out  # ✅ IMPORTANT: upload exported site
 
   deploy:
     environment:
