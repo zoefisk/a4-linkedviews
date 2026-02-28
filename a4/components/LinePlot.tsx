@@ -1,3 +1,5 @@
+// src/components/LinePlot.tsx
+
 "use client";
 
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -6,63 +8,96 @@ import { brushX } from "d3-brush";
 import { select } from "d3-selection";
 import CustomTooltip, { TooltipState } from "@/components/ToolTip";
 
-/* ============================== TYPES ============================== */
+/* =============================================================================
+   Types
+   ============================================================================= */
 
+/**
+ * Numeric accessor for x/y values.
+ * @template T - The datum type.
+ */
 type Accessor<T> = (d: T, i: number) => number;
 
+/**
+ * Brush selection reported to the parent.
+ * - x: selected domain range (or null if cleared)
+ * - y: always null (this component currently supports brushX only)
+ */
 export type BrushSelection = {
     x: [number, number] | null;
     y: null;
 };
 
 export interface LinePlotProps<T> {
+    /** Input data array. */
     data: T[];
 
+    /** Overall svg dimensions. */
     width?: number;
     height?: number;
+
+    /** Plot margins (space for axes and labels). */
     marginTop?: number;
     marginRight?: number;
     marginBottom?: number;
     marginLeft?: number;
 
+    /** Optional chart title and axis labels. */
     title?: string;
     xLabel?: string;
     yLabel?: string;
 
+    /** Accessors (defaults: x=index, y=value). */
     x?: Accessor<T>;
     y?: Accessor<T>;
 
+    /** Visual toggles. */
     showPoints?: boolean;
     showAxes?: boolean;
     showGrid?: boolean;
 
+    /** Line styling. */
     stroke?: string;
     strokeWidth?: number;
 
-    /** Constant point radius (kept simple) */
+    /** Constant point radius (kept simple). */
     pointRadius?: number;
 
-    /** Tooltip text for each point */
+    /** Tooltip text shown when hovering a point. */
     pointTitle?: (d: T, i: number) => string;
 
+    /** Enable x-axis brushing. */
     enableBrush?: boolean;
 
-    /** Snap to discrete X values (years) */
+    /** Snap brush selection to discrete x-values (e.g., years). */
     enableSnap?: boolean;
+
+    /** Discrete x-values used by snapping logic (e.g., list of years). */
     snapXValues?: number[];
 
+    /** Brush callback. Called during brush and after brush end. */
     onBrushChange?: (sel: BrushSelection) => void;
 
-    /** ✅ NEW: highlight a particular X value (e.g. a hovered year) */
+    /**
+     * Highlight a particular X value (e.g. the year corresponding to a hovered bar).
+     * When set, the nearest (approxEqual) point receives stronger styling.
+     */
     highlightX?: number | null;
 }
 
-/* ============================== HELPERS ============================== */
+/* =============================================================================
+   Helpers
+   ============================================================================= */
 
+/** Returns [min,max] ordering for two numbers. */
 function ordered(a: number, b: number): [number, number] {
     return a <= b ? [a, b] : [b, a];
 }
 
+/**
+ * Snap a value to the closest element in a list.
+ * Assumes `values` is non-empty.
+ */
 function snapToList(v: number, values: number[]) {
     let best = values[0];
     let bestDist = Math.abs(v - best);
@@ -76,12 +111,27 @@ function snapToList(v: number, values: number[]) {
     return best;
 }
 
+/** Approximate equality helper to avoid jitter / recursive brush moves. */
 function approxEqual(a: number, b: number, eps = 0.5) {
     return Math.abs(a - b) <= eps;
 }
 
-/* ============================== COMPONENT ============================== */
+/* =============================================================================
+   Component
+   ============================================================================= */
 
+/**
+ * LinePlot
+ *
+ * - Renders: grid, axes, a line, optional points
+ * - Interaction: brushX with optional snapping
+ * - Tooltip: instant custom tooltip on points
+ * - Linking: `highlightX` emphasizes a point for cross-view linking
+ *
+ * Notes:
+ * - Brush is rendered BEFORE points so circles stay clickable/hoverable.
+ * - Brush snapping uses a "programmaticMoveRef" guard to prevent recursion.
+ */
 export default function LinePlot<T>({
                                         data,
                                         width = 900,
@@ -117,19 +167,30 @@ export default function LinePlot<T>({
                                         highlightX = null,
                                     }: LinePlotProps<T>) {
     const clipId = useId();
+
+    /** Ref to the brush layer <g>. */
     const brushRef = useRef<SVGGElement | null>(null);
+
+    /**
+     * When we move the brush programmatically (snap), ignore brush events
+     * to prevent an infinite loop and jitter.
+     */
     const programmaticMoveRef = useRef(false);
 
-    // ✅ custom tooltip (instant)
+    /** Tooltip state for the custom overlay component. */
     const [tooltip, setTooltip] = useState<TooltipState | null>(null);
 
+    /** Default accessors. */
     const xAcc: Accessor<T> = x ?? ((_, i) => i);
     const yAcc: Accessor<T> = y ?? ((d: any) => d as number);
 
+    /** Inner plot area (used for the clip rect). */
     const innerWidth = width - marginLeft - marginRight;
     const innerHeight = height - marginTop - marginBottom;
 
-    /* ============================== SCALES ============================== */
+    /* -------------------------------------------------------------------------
+       Scales + geometry
+       ------------------------------------------------------------------------- */
 
     const { xScale, yScale, pathD, points, xTicks, yTicks } = useMemo(() => {
         const xs = data.map((d, i) => xAcc(d, i));
@@ -138,7 +199,7 @@ export default function LinePlot<T>({
         const [xMin, xMax] = d3.extent(xs) as [number, number];
         const [yMin, yMax] = d3.extent(ys) as [number, number];
 
-        // ---- DOMAIN PADDING (fixes cut-off dots) ----
+        // Domain padding prevents endpoint dots from being clipped.
         const xPad =
             snapXValues && snapXValues.length > 1
                 ? Math.abs(snapXValues[1] - snapXValues[0]) / 2
@@ -188,13 +249,16 @@ export default function LinePlot<T>({
         snapXValues,
     ]);
 
-    /* ============================== BRUSH + SNAP ============================== */
+    /* -------------------------------------------------------------------------
+       Brush + snap logic
+       ------------------------------------------------------------------------- */
 
     useEffect(() => {
         if (!enableBrush || !brushRef.current) return;
 
         const g = select(brushRef.current);
 
+        // Brush extent is the chart drawing region.
         const extent: [[number, number], [number, number]] = [
             [marginLeft, marginTop],
             [width - marginRight, height - marginBottom],
@@ -202,6 +266,9 @@ export default function LinePlot<T>({
 
         const b = brushX().extent(extent);
 
+        /**
+         * Emit selection in *domain* units (not pixels), with optional snapping.
+         */
         function emit(selPx: [number, number] | null) {
             if (!selPx) {
                 onBrushChange?.({ x: null, y: null });
@@ -218,20 +285,22 @@ export default function LinePlot<T>({
             onBrushChange?.({ x: [d0, d1], y: null });
         }
 
+        /**
+         * Visually snap the brush handles to the nearest discrete x-values.
+         * Guarded to avoid infinite brush recursion.
+         */
         function maybeSnapMove(selPx: [number, number] | null) {
             if (!selPx) return;
             if (!enableSnap || !snapXValues?.length) return;
 
-            const [d0raw, d1raw] = ordered(
-                xScale.invert(selPx[0]),
-                xScale.invert(selPx[1])
-            );
+            const [d0raw, d1raw] = ordered(xScale.invert(selPx[0]), xScale.invert(selPx[1]));
             const d0 = snapToList(d0raw, snapXValues);
             const d1 = snapToList(d1raw, snapXValues);
 
             const px0 = xScale(d0);
             const px1 = xScale(d1);
 
+            // Avoid tiny moves that cause jitter.
             if (approxEqual(selPx[0], px0) && approxEqual(selPx[1], px1)) return;
 
             programmaticMoveRef.current = true;
@@ -250,8 +319,10 @@ export default function LinePlot<T>({
             emit(e.selection);
         });
 
+        // Initialize brush.
         g.call(b as any);
 
+        // Double-click clears selection.
         g.on("dblclick", () => {
             programmaticMoveRef.current = true;
             g.call(b.move as any, null);
@@ -277,7 +348,9 @@ export default function LinePlot<T>({
         onBrushChange,
     ]);
 
-    /* ============================== TOOLTIP HELPERS ============================== */
+    /* -------------------------------------------------------------------------
+       Tooltip handlers
+       ------------------------------------------------------------------------- */
 
     function showTooltip(e: React.PointerEvent<SVGCircleElement>, text: string) {
         setTooltip({ x: e.clientX, y: e.clientY, text });
@@ -289,17 +362,27 @@ export default function LinePlot<T>({
         setTooltip(null);
     }
 
-    /* ============================== RENDER ============================== */
+    /* -------------------------------------------------------------------------
+       Render
+       ------------------------------------------------------------------------- */
 
     return (
         <>
             <svg width={width} height={height}>
+                {/* Title */}
                 {title && (
-                    <text x={width / 2} y={28} textAnchor="middle" fontSize={16} fontWeight={600}>
+                    <text
+                        x={width / 2}
+                        y={28}
+                        textAnchor="middle"
+                        fontSize={16}
+                        fontWeight={600}
+                    >
                         {title}
                     </text>
                 )}
 
+                {/* Grid lines */}
                 {showGrid && (
                     <g opacity={0.25}>
                         {xTicks.map((t) => (
@@ -325,8 +408,10 @@ export default function LinePlot<T>({
                     </g>
                 )}
 
+                {/* Axes + labels */}
                 {showAxes && (
                     <g fontSize={10}>
+                        {/* X axis baseline */}
                         <line
                             x1={marginLeft}
                             x2={width - marginRight}
@@ -335,7 +420,10 @@ export default function LinePlot<T>({
                             stroke="currentColor"
                         />
                         {xTicks.map((t) => (
-                            <g key={`xt-${t}`} transform={`translate(${xScale(t)},${height - marginBottom})`}>
+                            <g
+                                key={`xt-${t}`}
+                                transform={`translate(${xScale(t)},${height - marginBottom})`}
+                            >
                                 <line y2={6} stroke="currentColor" />
                                 <text y={18} textAnchor="middle">
                                     {t}
@@ -343,11 +431,17 @@ export default function LinePlot<T>({
                             </g>
                         ))}
                         {xLabel && (
-                            <text x={width / 2} y={height - 8} textAnchor="middle" fontSize={12}>
+                            <text
+                                x={width / 2}
+                                y={height - 8}
+                                textAnchor="middle"
+                                fontSize={12}
+                            >
                                 {xLabel}
                             </text>
                         )}
 
+                        {/* Y axis baseline */}
                         <line
                             x1={marginLeft}
                             x2={marginLeft}
@@ -381,17 +475,20 @@ export default function LinePlot<T>({
                     </clipPath>
                 </defs>
 
-                {/* Brush BELOW points so hover still works */}
                 {enableBrush && <g ref={brushRef} />}
 
+                {/* Main marks */}
                 <g clipPath={`url(#${clipId})`}>
+                    {/* Line */}
                     <path d={pathD} fill="none" stroke={stroke} strokeWidth={strokeWidth} />
 
+                    {/* Points */}
                     {showPoints &&
                         points.map((p) => {
                             const text = pointTitle ? pointTitle(p.raw, p.i) : "";
                             const hoverable = Boolean(pointTitle);
 
+                            // Highlight logic for linked views (hovered bar -> year point)
                             const isHighlighted =
                                 highlightX != null && approxEqual(p.xVal, highlightX, 0.0001);
 
@@ -402,7 +499,7 @@ export default function LinePlot<T>({
                                     cy={p.y}
                                     r={isHighlighted ? pointRadius + 2 : pointRadius}
                                     fill={isHighlighted ? "black" : "white"}
-                                    stroke={isHighlighted ? "black" : "black"}
+                                    stroke="black"
                                     strokeWidth={isHighlighted ? 2 : 1}
                                     style={{ cursor: hoverable ? "help" : "default" }}
                                     onPointerEnter={hoverable ? (e) => showTooltip(e, text) : undefined}
@@ -414,6 +511,7 @@ export default function LinePlot<T>({
                 </g>
             </svg>
 
+            {/* Tooltip overlay lives outside svg so it can use fixed positioning */}
             <CustomTooltip tooltip={tooltip} />
         </>
     );

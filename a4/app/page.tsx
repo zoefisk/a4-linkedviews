@@ -1,4 +1,4 @@
-// app/whatever/page.tsx
+// app/page.tsx
 import MoviesDashboard from "@/components/graphs/MoviesDashboard";
 
 export default function Page() {
