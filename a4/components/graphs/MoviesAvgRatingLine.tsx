@@ -17,7 +17,7 @@ export default function MoviesAvgRatingLine(props: {
         });
     }, []);
 
-    const points = useMemo(
+    const points: YearSummary[] = useMemo(
         () => (rows ? computeYearSummaries(rows, 3) : []),
         [rows]
     );
@@ -30,6 +30,7 @@ export default function MoviesAvgRatingLine(props: {
                 props.onYearBrush?.(null);
                 return;
             }
+
             props.onYearBrush([
                 Math.min(sel.x[0], sel.x[1]),
                 Math.max(sel.x[0], sel.x[1]),
@@ -48,6 +49,16 @@ export default function MoviesAvgRatingLine(props: {
             yLabel="Average IMDb rating"
             x={(d) => d.year}
             y={(d) => d.avgRating}
+
+            /* ✅ THIS IS THE MISSING PIECE */
+            pointTitle={(d) =>
+                `${d.year}
+Average rating: ${d.avgRating.toFixed(2)}
+Movies that year: ${d.count}
+Top movie: ${d.bestTitle}
+Top rating: ${d.bestRating.toFixed(1)}`
+            }
+
             enableBrush
             enableSnap
             snapXValues={years}

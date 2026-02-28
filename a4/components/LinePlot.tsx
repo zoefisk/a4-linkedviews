@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useEffect, useId, useMemo, useRef } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import * as d3 from "d3";
 import { brushX } from "d3-brush";
 import { select } from "d3-selection";
+import CustomTooltip, { TooltipState } from "@/components/ToolTip";
 
 /* ============================== TYPES ============================== */
 
@@ -39,11 +40,12 @@ export interface LinePlotProps<T> {
     strokeWidth?: number;
     pointRadius?: number;
 
+    /** Tooltip text for each point */
     pointTitle?: (d: T, i: number) => string;
 
     enableBrush?: boolean;
 
-    /** Snap to discrete X values (e.g. years) */
+    /** Snap to discrete X values (years) */
     enableSnap?: boolean;
     snapXValues?: number[];
 
@@ -69,6 +71,10 @@ function snapToList(v: number, values: number[]) {
     return best;
 }
 
+function approxEqual(a: number, b: number, eps = 0.5) {
+    return Math.abs(a - b) <= eps;
+}
+
 /* ============================== COMPONENT ============================== */
 
 export default function LinePlot<T>({
@@ -76,9 +82,9 @@ export default function LinePlot<T>({
                                         width = 900,
                                         height = 420,
                                         marginTop = 64,
-                                        marginRight = 24,
+                                        marginRight = 32,
                                         marginBottom = 56,
-                                        marginLeft = 64,
+                                        marginLeft = 72,
 
                                         title,
                                         xLabel,
@@ -106,6 +112,12 @@ export default function LinePlot<T>({
     const clipId = useId();
     const brushRef = useRef<SVGGElement | null>(null);
 
+    // IMPORTANT: useRef, not a fresh object each render
+    const programmaticMoveRef = useRef(false);
+
+    // ✅ custom tooltip (instant)
+    const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+
     const xAcc: Accessor<T> = x ?? ((_, i) => i);
     const yAcc: Accessor<T> = y ?? ((d: any) => d as number);
 
@@ -118,16 +130,24 @@ export default function LinePlot<T>({
         const xs = data.map((d, i) => xAcc(d, i));
         const ys = data.map((d, i) => yAcc(d, i));
 
-        const fix = (d: [number, number]) =>
-            d[0] === d[1] ? ([d[0] - 1, d[1] + 1] as [number, number]) : d;
+        const [xMin, xMax] = d3.extent(xs) as [number, number];
+        const [yMin, yMax] = d3.extent(ys) as [number, number];
+
+        // ---- DOMAIN PADDING (fixes cut-off dots) ----
+        const xPad =
+            snapXValues && snapXValues.length > 1
+                ? Math.abs(snapXValues[1] - snapXValues[0]) / 2
+                : (xMax - xMin) * 0.02 || 1;
+
+        const yPad = (yMax - yMin) * 0.05 || 0.5;
 
         const xScale = d3.scaleLinear(
-            fix(d3.extent(xs) as [number, number]),
+            [xMin - xPad, xMax + xPad],
             [marginLeft, width - marginRight]
         );
 
         const yScale = d3.scaleLinear(
-            fix(d3.extent(ys) as [number, number]),
+            [yMin - yPad, yMax + yPad],
             [height - marginBottom, marginTop]
         );
 
@@ -149,9 +169,20 @@ export default function LinePlot<T>({
             xTicks: xScale.ticks(8),
             yTicks: yScale.ticks(6),
         };
-    }, [data, xAcc, yAcc, width, height, marginLeft, marginRight, marginTop, marginBottom]);
+    }, [
+        data,
+        xAcc,
+        yAcc,
+        width,
+        height,
+        marginLeft,
+        marginRight,
+        marginTop,
+        marginBottom,
+        snapXValues,
+    ]);
 
-    /* ============================== BRUSH (SAFE) ============================== */
+    /* ============================== BRUSH + SNAP ============================== */
 
     useEffect(() => {
         if (!enableBrush || !brushRef.current) return;
@@ -171,11 +202,9 @@ export default function LinePlot<T>({
                 return;
             }
 
-            let [d0, d1] = ordered(
-                xScale.invert(selPx[0]),
-                xScale.invert(selPx[1])
-            );
+            let [d0, d1] = ordered(xScale.invert(selPx[0]), xScale.invert(selPx[1]));
 
+            // snap the *reported* values
             if (enableSnap && snapXValues?.length) {
                 d0 = snapToList(d0, snapXValues);
                 d1 = snapToList(d1, snapXValues);
@@ -184,16 +213,52 @@ export default function LinePlot<T>({
             onBrushChange?.({ x: [d0, d1], y: null });
         }
 
-        b.on("brush end", (e) => emit(e.selection));
+        function maybeSnapMove(selPx: [number, number] | null) {
+            if (!selPx) return;
+            if (!enableSnap || !snapXValues?.length) return;
+
+            const [d0raw, d1raw] = ordered(
+                xScale.invert(selPx[0]),
+                xScale.invert(selPx[1])
+            );
+            const d0 = snapToList(d0raw, snapXValues);
+            const d1 = snapToList(d1raw, snapXValues);
+
+            const px0 = xScale(d0);
+            const px1 = xScale(d1);
+
+            // Only move if it actually changes (prevents recursion/jitter)
+            if (approxEqual(selPx[0], px0) && approxEqual(selPx[1], px1)) return;
+
+            programmaticMoveRef.current = true;
+            g.call(b.move as any, ordered(px0, px1));
+            programmaticMoveRef.current = false;
+        }
+
+        b.on("brush", (e: any) => {
+            if (programmaticMoveRef.current) return;
+            emit(e.selection);
+        });
+
+        b.on("end", (e: any) => {
+            if (programmaticMoveRef.current) return;
+            // snap the brush visually on end
+            maybeSnapMove(e.selection);
+            // re-emit after snapping so parent gets clean values
+            emit(e.selection);
+        });
 
         g.call(b as any);
 
         g.on("dblclick", () => {
-            g.call((b as any).move, null);
+            programmaticMoveRef.current = true;
+            g.call(b.move as any, null);
+            programmaticMoveRef.current = false;
             emit(null);
         });
 
         return () => {
+            g.on("dblclick", null);
             g.selectAll("*").remove();
         };
     }, [
@@ -210,76 +275,182 @@ export default function LinePlot<T>({
         onBrushChange,
     ]);
 
+    /* ============================== TOOLTIP HELPERS ============================== */
+
+    function showTooltip(e: React.PointerEvent<SVGCircleElement>, text: string) {
+        // instant; no debounce
+        setTooltip({ x: e.clientX, y: e.clientY, text });
+    }
+
+    function moveTooltip(e: React.PointerEvent<SVGCircleElement>, text: string) {
+        // keep text stable + track cursor
+        setTooltip({ x: e.clientX, y: e.clientY, text });
+    }
+
+    function hideTooltip() {
+        setTooltip(null);
+    }
+
     /* ============================== RENDER ============================== */
 
     return (
-        <svg width={width} height={height}>
-            {title && (
-                <text x={width / 2} y={24} textAnchor="middle" fontSize={16} fontWeight={600}>
-                    {title}
-                </text>
-            )}
+        <>
+            <svg width={width} height={height}>
+                {/* Title */}
+                {title && (
+                    <text
+                        x={width / 2}
+                        y={28}
+                        textAnchor="middle"
+                        fontSize={16}
+                        fontWeight={600}
+                    >
+                        {title}
+                    </text>
+                )}
 
-            {showGrid && (
-                <g opacity={0.25}>
-                    {xTicks.map((t) => (
-                        <line key={t} x1={xScale(t)} x2={xScale(t)} y1={marginTop} y2={height - marginBottom} stroke="currentColor" />
-                    ))}
-                    {yTicks.map((t) => (
-                        <line key={t} y1={yScale(t)} y2={yScale(t)} x1={marginLeft} x2={width - marginRight} stroke="currentColor" />
-                    ))}
+                {/* Grid */}
+                {showGrid && (
+                    <g opacity={0.25}>
+                        {xTicks.map((t) => (
+                            <line
+                                key={`xg-${t}`}
+                                x1={xScale(t)}
+                                x2={xScale(t)}
+                                y1={marginTop}
+                                y2={height - marginBottom}
+                                stroke="currentColor"
+                            />
+                        ))}
+                        {yTicks.map((t) => (
+                            <line
+                                key={`yg-${t}`}
+                                y1={yScale(t)}
+                                y2={yScale(t)}
+                                x1={marginLeft}
+                                x2={width - marginRight}
+                                stroke="currentColor"
+                            />
+                        ))}
+                    </g>
+                )}
+
+                {/* Axes */}
+                {showAxes && (
+                    <g fontSize={10}>
+                        {/* X axis */}
+                        <line
+                            x1={marginLeft}
+                            x2={width - marginRight}
+                            y1={height - marginBottom}
+                            y2={height - marginBottom}
+                            stroke="currentColor"
+                        />
+                        {xTicks.map((t) => (
+                            <g
+                                key={`xt-${t}`}
+                                transform={`translate(${xScale(t)},${height - marginBottom})`}
+                            >
+                                <line y2={6} stroke="currentColor" />
+                                <text y={18} textAnchor="middle">
+                                    {t}
+                                </text>
+                            </g>
+                        ))}
+                        {xLabel && (
+                            <text
+                                x={width / 2}
+                                y={height - 8}
+                                textAnchor="middle"
+                                fontSize={12}
+                            >
+                                {xLabel}
+                            </text>
+                        )}
+
+                        {/* Y axis */}
+                        <line
+                            x1={marginLeft}
+                            x2={marginLeft}
+                            y1={marginTop}
+                            y2={height - marginBottom}
+                            stroke="currentColor"
+                        />
+                        {yTicks.map((t) => (
+                            <g
+                                key={`yt-${t}`}
+                                transform={`translate(${marginLeft},${yScale(t)})`}
+                            >
+                                <line x2={-6} stroke="currentColor" />
+                                <text x={-10} dy="0.32em" textAnchor="end">
+                                    {t}
+                                </text>
+                            </g>
+                        ))}
+                        {yLabel && (
+                            <text
+                                transform={`translate(20 ${height / 2}) rotate(-90)`}
+                                textAnchor="middle"
+                                fontSize={12}
+                            >
+                                {yLabel}
+                            </text>
+                        )}
+                    </g>
+                )}
+
+                {/* Clip */}
+                <defs>
+                    <clipPath id={clipId}>
+                        <rect
+                            x={marginLeft}
+                            y={marginTop}
+                            width={innerWidth}
+                            height={innerHeight}
+                        />
+                    </clipPath>
+                </defs>
+
+                {/* Brush below points (keeps hover working) */}
+                {enableBrush && <g ref={brushRef} />}
+
+                {/* Line + points */}
+                <g clipPath={`url(#${clipId})`}>
+                    <path
+                        d={pathD}
+                        fill="none"
+                        stroke={stroke}
+                        strokeWidth={strokeWidth}
+                    />
+                    {showPoints &&
+                        points.map((p) => {
+                            const text = pointTitle ? pointTitle(p.raw, p.i) : "";
+                            const hoverable = Boolean(pointTitle);
+
+                            return (
+                                <circle
+                                    key={p.i}
+                                    cx={p.x}
+                                    cy={p.y}
+                                    r={pointRadius}
+                                    fill="white"
+                                    stroke="black"
+                                    style={{ cursor: hoverable ? "help" : "default" }}
+                                    onPointerEnter={
+                                        hoverable ? (e) => showTooltip(e, text) : undefined
+                                    }
+                                    onPointerMove={
+                                        hoverable ? (e) => moveTooltip(e, text) : undefined
+                                    }
+                                    onPointerLeave={hoverable ? hideTooltip : undefined}
+                                />
+                            );
+                        })}
                 </g>
-            )}
+            </svg>
 
-            {showAxes && (
-                <g fontSize={10}>
-                    {/* X */}
-                    <line x1={marginLeft} x2={width - marginRight} y1={height - marginBottom} y2={height - marginBottom} stroke="currentColor" />
-                    {xTicks.map((t) => (
-                        <g key={t} transform={`translate(${xScale(t)},${height - marginBottom})`}>
-                            <line y2={6} stroke="currentColor" />
-                            <text y={18} textAnchor="middle">{t}</text>
-                        </g>
-                    ))}
-                    {xLabel && (
-                        <text x={width / 2} y={height - 8} textAnchor="middle" fontSize={12}>
-                            {xLabel}
-                        </text>
-                    )}
-
-                    {/* Y */}
-                    <line x1={marginLeft} x2={marginLeft} y1={marginTop} y2={height - marginBottom} stroke="currentColor" />
-                    {yTicks.map((t) => (
-                        <g key={t} transform={`translate(${marginLeft},${yScale(t)})`}>
-                            <line x2={-6} stroke="currentColor" />
-                            <text x={-10} dy="0.32em" textAnchor="end">{t}</text>
-                        </g>
-                    ))}
-                    {yLabel && (
-                        <text transform={`translate(16 ${height / 2}) rotate(-90)`} textAnchor="middle" fontSize={12}>
-                            {yLabel}
-                        </text>
-                    )}
-                </g>
-            )}
-
-            <defs>
-                <clipPath id={clipId}>
-                    <rect x={marginLeft} y={marginTop} width={innerWidth} height={innerHeight} />
-                </clipPath>
-            </defs>
-
-            <g clipPath={`url(#${clipId})`}>
-                <path d={pathD} fill="none" stroke={stroke} strokeWidth={strokeWidth} />
-                {showPoints &&
-                    points.map((p) => (
-                        <circle key={p.i} cx={p.x} cy={p.y} r={pointRadius} fill="white" stroke="black">
-                            {pointTitle && <title>{pointTitle(p.raw, p.i)}</title>}
-                        </circle>
-                    ))}
-            </g>
-
-            {enableBrush && <g ref={brushRef} />}
-        </svg>
+            {/* ✅ Custom tooltip overlay */}
+            <CustomTooltip tooltip={tooltip} />
+        </>
     );
 }
