@@ -40,12 +40,15 @@ export default function MoviesDashboard() {
                 fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial",
             }}
         >
-            <header style={{ display: "grid", gap: 6 }}>
-                <h1 style={{ margin: 0, fontSize: 28, letterSpacing: -0.3 }}>
+            <header style={{display: "grid", gap: 6}}>
+                <h1 style={{margin: 0, fontSize: 28, letterSpacing: -0.3}}>
                     Movie Ratings Explorer
                 </h1>
-                <p style={{ margin: 0, opacity: 0.7 }}>
-                    Brush a year range above the x-axis to filter the top-rated titles.
+                <p style={{marginBottom: 2, opacity: 0.7}}>
+                    Quick note: The reason that the average ratings is so much higher in the early 1900s is that there are significantly less movies available from this data group, and all of the movies that were included were rated fairly high.
+                </p>
+                <p style={{margin: 0, opacity: 0.7}}>
+                    Brush (drag your mouse on) a year range above the x-axis to filter the top-rated titles.
                     Hover a bar to highlight that year on the line chart.
                 </p>
             </header>
@@ -55,7 +58,7 @@ export default function MoviesDashboard() {
                     onYearBrush={setBrushedX}
                     highlightYear={hoverYear}
                 />
-                <div style={{ marginTop: 8, fontSize: 12, opacity: 0.7 }}>
+                <div style={{marginTop: 8, fontSize: 12, opacity: 0.7}}>
                     {yearRange ? (
                         <>
                             Selected years: <b>{yearRange[0]}</b>–<b>{yearRange[1]}</b>
